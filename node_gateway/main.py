@@ -3,9 +3,37 @@
 import time
 import asyncio
 import random
+import logging
+from cmreslogging.handlers import CMRESHandler
+
 
 ## TODO: Get some feedback system to determine if pump is running
 
+# Create ELK handler
+#handler = CMRESHandler(hosts=[{'host': 'localhost', 'port': 9200}],
+#                       auth_type=CMRESHandler.AuthType.BASIC_AUTH,
+#                       auth_details=('elastic','QYPfnDpuhoh5A9oftor0sg=='),
+#                       use_ssl=True,
+#                       verify_ssl=False,
+#                       es_index_name="my_python_index")
+# Create logger 'test_logger'
+logger = logging.getLogger('test_logger')
+logger.setLevel(logging.DEBUG)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('spam.log')
+fh.setLevel(logging.DEBUG)
+# Create console handler with a higher log level
+ch = logging.StreamHandler()
+ch.setLevel(logging.ERROR)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+# Add the handlers to the logger
+logger.addHandler(fh)
+logger.addHandler(ch)
+#logger.addHandler(handler)
 
 ## Initiate Pins IN and Pins OUT
 #s_1 = Pin('P9', Pin.IN, Pin.PULL_UP) # Sensor 1
@@ -25,17 +53,17 @@ class PumpObject:
         self.name = name
         self.location = location
         self.powered_state = False
-        self.temprature = None
+        self.temperature = None
         self.relay = gpio_pin
         self.pump_start_time = None
         self.pump_stop_time = None
 
     def get_status(self):
-        if self.powered_on is True:
+        if self.powered_state is True:
             temporary_stop_time = time.time()
             print("INFO: Pump is running [Time running: {}s]".format(int(temporary_stop_time - self.pump_start_time)))
             return True
-        else:
+        elif self.powered_state is False:
             print("INFO: Pump is powered off")
             return False
 
@@ -57,7 +85,7 @@ class PumpObject:
     def stop_pump(self):
         if self.powered_on is True:
             print("INFO: Attempting to stop the pump")
-            ## TODO: Run try function to initiate GPIO pin to stop pump. Possible feedback?
+            ## TODO: Run try function to stop pump. Possible feedback?
             self.powered_on = False
             self.pump_stop_time = time.time()
             print("INFO: Time running: {}".format((self.pump_stop_time - self.pump_start_time)))
@@ -121,19 +149,30 @@ def pump_function():
     # If full
     if sens1.value == 1 and sens2.value == 1:
         #relay_1.value(0)
-        print('INFO: Well draining procedure started')
+        log_msg = 'Well draining procedure started'
+        logger.info(log_msg)
         while time.time() < (time_start + max_pump_time):
             set_reset = True
             sens1.pull_sensor()
             sens2.pull_sensor()
             if sens1.value > sens2.value or sens1.value == sens2.value:
                 time_calculated = int(time.time() - time_start)
-                print('INFO: Still draining [{}s - {}:{} - {}:{}]'.format(time_calculated, sens1.position, sens1.value, sens2.position, sens2.value))
+                log_msg = 'Still draining [{}s] {}:{} - {}:{}'.format(time_calculated,
+                                                                            sens1.position,
+                                                                            sens1.value,
+                                                                            sens2.position,
+                                                                            sens2.value)
+                logger.debug(log_msg)
                 time.sleep(1)
             else:
                 set_reset = False
                 #relay_1.value(1)
-                print('WARN: WTF, This should not be possible - {}:{} - {}:{}'.format(sens1.position, sens1.value, sens2.position, sens2.value))
+                log_msg = 'WTF, Top sensor is probably stuck! ({}:{} - {}:{})'.format(sens1.position,
+                                                                                             sens1.value,
+                                                                                             sens2.position,
+                                                                                             sens2.value)
+                logger.error(log_msg)
+                print()
                 break # Turn of relay if this is a possibility, to be on the safe side
         set_reset = False
         #time.sleep(1)
@@ -141,23 +180,36 @@ def pump_function():
     # Not water
     elif sens1.value == 0 and sens2.value == 0:
         #relay_1.value(1)
-        print('INFO - No water in the well!')
+        log_msg = 'No water in the well! ({}:{} - {}:{})'.format(sens1.position,
+                                                                 sens1.value,
+                                                                 sens2.position,
+                                                                 sens2.value)
+        logger.info(log_msg)
         #time.sleep(1)
 
     # Filling up
     elif sens1.value == 1 and sens2.value == 0:
         #relay_1.value(1)
-        print('INFO - Well is filling')
+        log_msg = 'Well is filling ({}:{} - {}:{})'.format(sens1.position,
+                                                           sens1.value,
+                                                           sens2.position,
+                                                           sens2.value)
+        logger.info(log_msg)
         #time.sleep(1)
 
     # Top sensor is stuck
     elif sens1.value == 0 and sens2.value == 1:
-        print('ERROR: Top sensor is probably stuck')
+        log_msg = 'Top sensor is probably stuck! ({}:{} - {}:{})'.format(sens1.position,
+                                                                         sens1.value,
+                                                                         sens2.position,
+                                                                         sens2.value)
+        logger.error(log_msg)
 
     # Nothing
     else:
         #relay_1.value(1)
-        print('Do nothing')
+        log_msg = 'Do nothing'
+        logger.info(log_msg)
         #time.sleep(1)
 
 while True:
